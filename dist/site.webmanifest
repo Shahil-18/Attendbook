@@ -1,0 +1,24 @@
+{
+  "name": "AttendBook",
+  "short_name": "AttendBook",
+  "description": "CA Attendance, Payroll and Punch Report Management System",
+  "icons": [
+    {
+      "src": "/attendbook-favicon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/attendbook-favicon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "theme_color": "#0f172a",
+  "background_color": "#f8fafc",
+  "display": "standalone",
+  "start_url": "/",
+  "scope": "/"
+}
