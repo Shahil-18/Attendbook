@@ -1,114 +1,54 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
+import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore"
 import {
-  addDoc,
-  collection,
-  getDocs,
-  query,
-  serverTimestamp,
-  updateDoc,
-  where,
-  doc,
-} from "firebase/firestore"
-import {
-  CalendarCheck,
   Building2,
-  CheckCircle2,
   Clock,
-  RefreshCw,
+  RotateCcw,
   Save,
-  Search,
+  Settings as SettingsIcon,
+  ShieldCheck,
   Sparkles,
-  Users,
-  XCircle,
-  Coffee,
-  Plane,
   Timer,
+  UserRound,
 } from "lucide-react"
 import { db } from "../firebase/firebaseConfig"
 import { useAuth } from "../context/AuthContext"
 
-function Attendance() {
+function Settings() {
   const { currentUser } = useAuth()
 
-  const today = new Date().toISOString().slice(0, 10)
+  const SETTINGS_STORAGE_KEY = "attendbook_app_settings"
 
-  const [companies, setCompanies] = useState([])
-  const [employees, setEmployees] = useState([])
-  const [attendanceRecords, setAttendanceRecords] = useState([])
+  const defaultSettings = {
+    firmName: "",
+    firmOwnerName: "",
+    contactNumber: "",
+    email: "",
+    address: "",
+    defaultWorkingDays: 26,
+    defaultStandardHours: 8,
+    overtimeEnabled: true,
+    overtimeMultiplier: 1.5,
+    duplicatePunchMinutes: 2,
+    halfDayMinimumHours: 4,
+    fullDayMinimumHours: 8,
+  }
 
-  const [selectedCompany, setSelectedCompany] = useState("")
-  const [selectedDate, setSelectedDate] = useState(today)
-  const [searchText, setSearchText] = useState("")
-  const [attendanceMap, setAttendanceMap] = useState({})
-
+  const [settings, setSettings] = useState(defaultSettings)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
+  const [settingsSource, setSettingsSource] = useState("Default")
 
-  const statusOptions = [
-    {
-      value: "Present",
-      label: "Present",
-      icon: CheckCircle2,
-      color: "text-green-700",
-      bg: "bg-green-50",
-      active: "bg-green-700 text-white border-green-700",
-    },
-    {
-      value: "Absent",
-      label: "Absent",
-      icon: XCircle,
-      color: "text-red-700",
-      bg: "bg-red-50",
-      active: "bg-red-700 text-white border-red-700",
-    },
-    {
-      value: "Half Day",
-      label: "Half Day",
-      icon: Coffee,
-      color: "text-yellow-700",
-      bg: "bg-yellow-50",
-      active: "bg-yellow-600 text-white border-yellow-600",
-    },
-    {
-      value: "Paid Leave",
-      label: "Paid Leave",
-      icon: Plane,
-      color: "text-blue-700",
-      bg: "bg-blue-50",
-      active: "bg-blue-700 text-white border-blue-700",
-    },
-    {
-      value: "Holiday",
-      label: "Holiday",
-      icon: CalendarCheck,
-      color: "text-purple-700",
-      bg: "bg-purple-50",
-      active: "bg-purple-700 text-white border-purple-700",
-    },
-    {
-      value: "Late",
-      label: "Late",
-      icon: Timer,
-      color: "text-orange-700",
-      bg: "bg-orange-50",
-      active: "bg-orange-600 text-white border-orange-600",
-    },
-  ]
-
-  const getCompanyName = (companyId) => {
-    const company = companies.find((item) => item.id === companyId)
-    return company?.name || company?.companyName || "-"
+  const updateField = (field, value) => {
+    setSettings((prev) => ({
+      ...prev,
+      [field]: value,
+    }))
   }
 
-  const getStatusConfig = (status) => {
-    return (
-      statusOptions.find((item) => item.value === status) || statusOptions[1]
-    )
-  }
-
-  const fetchData = async () => {
+  const loadSettings = async () => {
     if (!currentUser) return
 
     try {
@@ -116,186 +56,64 @@ function Attendance() {
       setError("")
       setSuccess("")
 
-      const companiesQuery = query(
-        collection(db, "companies"),
-        where("caId", "==", currentUser.uid)
-      )
+      const settingsRef = doc(db, "userSettings", currentUser.uid)
+      const settingsSnap = await getDoc(settingsRef)
 
-      const employeesQuery = query(
-        collection(db, "employees"),
-        where("caId", "==", currentUser.uid)
-      )
+      if (settingsSnap.exists()) {
+        const firebaseSettings = settingsSnap.data()
 
-      const attendanceQuery = query(
-        collection(db, "attendance"),
-        where("caId", "==", currentUser.uid)
-      )
+        const finalSettings = {
+          ...defaultSettings,
+          ...firebaseSettings,
+        }
 
-      const [companiesSnapshot, employeesSnapshot, attendanceSnapshot] =
-        await Promise.all([
-          getDocs(companiesQuery),
-          getDocs(employeesQuery),
-          getDocs(attendanceQuery),
-        ])
-
-      const companyList = companiesSnapshot.docs.map((docItem) => ({
-        id: docItem.id,
-        ...docItem.data(),
-      }))
-
-      const employeeList = employeesSnapshot.docs.map((docItem) => ({
-        id: docItem.id,
-        ...docItem.data(),
-      }))
-
-      const attendanceList = attendanceSnapshot.docs.map((docItem) => ({
-        id: docItem.id,
-        ...docItem.data(),
-      }))
-
-      companyList.sort((a, b) =>
-        (a.name || a.companyName || "").localeCompare(
-          b.name || b.companyName || ""
-        )
-      )
-
-      employeeList.sort((a, b) =>
-        (a.name || a.employeeName || "").localeCompare(
-          b.name || b.employeeName || ""
-        )
-      )
-
-      setCompanies(companyList)
-      setEmployees(employeeList)
-      setAttendanceRecords(attendanceList)
-
-      if (companyList.length > 0 && !selectedCompany) {
-        setSelectedCompany(companyList[0].id)
+        setSettings(finalSettings)
+        localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(finalSettings))
+        setSettingsSource("Firebase")
+        return
       }
+
+      const localSettings = localStorage.getItem(SETTINGS_STORAGE_KEY)
+
+      if (localSettings) {
+        const parsedLocalSettings = JSON.parse(localSettings)
+
+        setSettings({
+          ...defaultSettings,
+          ...parsedLocalSettings,
+        })
+
+        setSettingsSource("Local Backup")
+        return
+      }
+
+      setSettings(defaultSettings)
+      setSettingsSource("Default")
     } catch (err) {
-      setError("Failed to load attendance data.")
+      console.error(err)
+
+      const localSettings = localStorage.getItem(SETTINGS_STORAGE_KEY)
+
+      if (localSettings) {
+        setSettings({
+          ...defaultSettings,
+          ...JSON.parse(localSettings),
+        })
+
+        setSettingsSource("Local Backup")
+      } else {
+        setError("Failed to load settings.")
+        setSettingsSource("Default")
+      }
     } finally {
       setLoading(false)
     }
   }
 
-  const companyEmployees = useMemo(() => {
-    return employees
-      .filter((employee) => {
-        const matchesCompany = selectedCompany
-          ? employee.companyId === selectedCompany
-          : false
-
-        const employeeName =
-          employee.name || employee.employeeName || employee.fullName || ""
-
-        const matchesSearch = employeeName
-          .toLowerCase()
-          .includes(searchText.toLowerCase())
-
-        const isActive = employee.isActive !== false
-
-        return matchesCompany && matchesSearch && isActive
-      })
-      .sort((a, b) => {
-        const nameA = a.name || a.employeeName || ""
-        const nameB = b.name || b.employeeName || ""
-        return nameA.localeCompare(nameB)
-      })
-  }, [employees, selectedCompany, searchText])
-
-  const selectedDateRecords = useMemo(() => {
-    return attendanceRecords.filter((record) => {
-      return (
-        record.companyId === selectedCompany &&
-        (record.date === selectedDate ||
-          record.attendanceDate === selectedDate)
-      )
-    })
-  }, [attendanceRecords, selectedCompany, selectedDate])
-
-  const summary = useMemo(() => {
-    const values = Object.values(attendanceMap)
-
-    return {
-      total: companyEmployees.length,
-      marked: values.filter(Boolean).length,
-      present: values.filter((status) => status === "Present").length,
-      absent: values.filter((status) => status === "Absent").length,
-      halfDay: values.filter((status) => status === "Half Day").length,
-      paidLeave: values.filter((status) => status === "Paid Leave").length,
-      holiday: values.filter((status) => status === "Holiday").length,
-      late: values.filter((status) => status === "Late").length,
-    }
-  }, [attendanceMap, companyEmployees])
-
-  const applyExistingAttendance = () => {
-    const map = {}
-
-    companyEmployees.forEach((employee) => {
-      const existingRecord = selectedDateRecords.find(
-        (record) => record.employeeId === employee.id
-      )
-
-      map[employee.id] = existingRecord?.status || existingRecord?.attendanceStatus || ""
-    })
-
-    setAttendanceMap(map)
-  }
-
-  const markAttendance = (employeeId, status) => {
-    setAttendanceMap((prev) => ({
-      ...prev,
-      [employeeId]: status,
-    }))
-  }
-
-  const markAll = (status) => {
-    const updatedMap = {}
-
-    companyEmployees.forEach((employee) => {
-      updatedMap[employee.id] = status
-    })
-
-    setAttendanceMap(updatedMap)
-  }
-
-  const clearAll = () => {
-    const updatedMap = {}
-
-    companyEmployees.forEach((employee) => {
-      updatedMap[employee.id] = ""
-    })
-
-    setAttendanceMap(updatedMap)
-  }
-
-  const saveAttendance = async () => {
+  const saveSettings = async () => {
     if (!currentUser) {
       setError("Please login first.")
       return
-    }
-
-    if (!selectedCompany) {
-      setError("Please select company.")
-      return
-    }
-
-    if (!selectedDate) {
-      setError("Please select date.")
-      return
-    }
-
-    const unmarkedEmployees = companyEmployees.filter(
-      (employee) => !attendanceMap[employee.id]
-    )
-
-    if (unmarkedEmployees.length > 0) {
-      const confirmSave = window.confirm(
-        `${unmarkedEmployees.length} employee(s) are unmarked. Save anyway?`
-      )
-
-      if (!confirmSave) return
     }
 
     try {
@@ -303,101 +121,117 @@ function Attendance() {
       setError("")
       setSuccess("")
 
-      const operations = companyEmployees
-        .filter((employee) => attendanceMap[employee.id])
-        .map(async (employee) => {
-          const employeeName =
-            employee.name || employee.employeeName || employee.fullName || "-"
+      const cleanSettings = {
+        firmName: String(settings.firmName || "").trim(),
+        firmOwnerName: String(settings.firmOwnerName || "").trim(),
+        contactNumber: String(settings.contactNumber || "").trim(),
+        email: String(settings.email || "").trim(),
+        address: String(settings.address || "").trim(),
 
-          const existingRecord = attendanceRecords.find((record) => {
-            return (
-              record.caId === currentUser.uid &&
-              record.companyId === selectedCompany &&
-              record.employeeId === employee.id &&
-              (record.date === selectedDate ||
-                record.attendanceDate === selectedDate)
-            )
-          })
+        defaultWorkingDays: Number(settings.defaultWorkingDays || 26),
+        defaultStandardHours: Number(settings.defaultStandardHours || 8),
 
-          const payload = {
-            caId: currentUser.uid,
-            companyId: selectedCompany,
-            companyName: getCompanyName(selectedCompany),
-            employeeId: employee.id,
-            employeeName,
-            date: selectedDate,
-            attendanceDate: selectedDate,
-            status: attendanceMap[employee.id],
-            attendanceStatus: attendanceMap[employee.id],
-            updatedAt: serverTimestamp(),
-            updatedAtMillis: Date.now(),
-          }
+        overtimeEnabled: Boolean(settings.overtimeEnabled),
+        overtimeMultiplier: Number(settings.overtimeMultiplier || 1.5),
 
-          if (existingRecord) {
-            await updateDoc(doc(db, "attendance", existingRecord.id), payload)
-          } else {
-            await addDoc(collection(db, "attendance"), {
-              ...payload,
-              createdAt: serverTimestamp(),
-              createdAtMillis: Date.now(),
-            })
-          }
-        })
+        duplicatePunchMinutes: Number(settings.duplicatePunchMinutes || 2),
+        halfDayMinimumHours: Number(settings.halfDayMinimumHours || 4),
+        fullDayMinimumHours: Number(settings.fullDayMinimumHours || 8),
 
-      await Promise.all(operations)
+        userId: currentUser.uid,
+        updatedAt: serverTimestamp(),
+        updatedAtMillis: Date.now(),
+      }
 
-      setSuccess("Attendance saved successfully.")
-      await fetchData()
+      await setDoc(doc(db, "userSettings", currentUser.uid), cleanSettings, {
+        merge: true,
+      })
+
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(cleanSettings))
+
+      setSettings(cleanSettings)
+      setSettingsSource("Firebase")
+      setSuccess("Settings saved successfully.")
     } catch (err) {
-      setError("Failed to save attendance.")
+      console.error(err)
+      setError("Failed to save settings.")
     } finally {
       setSaving(false)
     }
   }
 
-  useEffect(() => {
-    fetchData()
-  }, [currentUser])
+  const resetSettings = () => {
+    const confirmReset = window.confirm(
+      "Are you sure you want to reset settings to default?"
+    )
+
+    if (!confirmReset) return
+
+    setSettings(defaultSettings)
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(defaultSettings))
+    setSettingsSource("Default")
+    setSuccess("Settings reset to default. Click Save Settings to update Firebase.")
+    setError("")
+  }
 
   useEffect(() => {
-    applyExistingAttendance()
-  }, [companyEmployees, selectedDateRecords])
+    loadSettings()
+  }, [currentUser])
+
+  if (loading) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="bg-white/90 backdrop-blur-xl border border-white/80 rounded-[2rem] shadow-xl p-8 text-center">
+          <div className="w-14 h-14 border-4 border-blue-200 border-t-blue-700 rounded-full animate-spin mx-auto"></div>
+          <p className="text-slate-600 font-semibold mt-5">
+            Loading settings...
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-8">
       <div className="relative overflow-hidden rounded-[2rem] bg-slate-950 text-white shadow-2xl">
         <div className="absolute inset-0">
-          <div className="absolute -top-24 -left-24 w-80 h-80 bg-orange-600/30 rounded-full blur-3xl"></div>
-          <div className="absolute -bottom-24 -right-24 w-80 h-80 bg-blue-600/30 rounded-full blur-3xl"></div>
+          <div className="absolute -top-24 -left-24 w-80 h-80 bg-blue-600/30 rounded-full blur-3xl"></div>
+          <div className="absolute -bottom-24 -right-24 w-80 h-80 bg-purple-600/30 rounded-full blur-3xl"></div>
         </div>
 
-        <div className="relative p-6 sm:p-8 lg:p-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+        <div className="relative p-6 sm:p-8 lg:p-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-8">
           <div>
-            <p className="inline-flex items-center gap-2 bg-white/10 border border-white/10 text-orange-100 px-4 py-2 rounded-full text-sm font-bold">
+            <p className="inline-flex items-center gap-2 bg-white/10 border border-white/10 text-blue-100 px-4 py-2 rounded-full text-sm font-bold">
               <Sparkles size={16} />
-              Daily Manual Attendance
+              AttendBook Control Panel
             </p>
 
-            <h1 className="mt-5 text-3xl sm:text-4xl font-black tracking-tight">
-              Attendance
+            <h1 className="mt-5 text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight">
+              Settings
             </h1>
 
-            <p className="mt-3 text-slate-300 max-w-2xl">
-              Mark employee attendance company-wise with quick bulk actions,
-              smart status buttons and clean daily summaries.
+            <p className="mt-4 text-slate-300 max-w-3xl leading-relaxed">
+              Manage firm details, payroll defaults, overtime rules, punch
+              processing rules and salary slip information.
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-4 min-w-full sm:min-w-[360px]">
-            <div className="bg-white/10 border border-white/10 rounded-3xl p-5">
-              <p className="text-slate-300 text-sm">Employees</p>
-              <h2 className="text-3xl font-black mt-2">{summary.total}</h2>
+          <div className="bg-white/10 border border-white/10 rounded-3xl p-5 min-w-full sm:min-w-[330px] lg:min-w-[360px]">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-white text-blue-700 rounded-2xl flex items-center justify-center">
+                <ShieldCheck size={25} />
+              </div>
+
+              <div>
+                <p className="text-slate-300 text-sm">Settings Source</p>
+                <h2 className="text-2xl font-black">{settingsSource}</h2>
+              </div>
             </div>
 
-            <div className="bg-white/10 border border-white/10 rounded-3xl p-5">
-              <p className="text-slate-300 text-sm">Marked</p>
-              <h2 className="text-3xl font-black mt-2">{summary.marked}</h2>
-            </div>
+            <p className="text-slate-300 text-sm mt-4">
+              Saved settings are used in punch report, salary calculation and
+              salary slip generation.
+            </p>
           </div>
         </div>
       </div>
@@ -414,277 +248,352 @@ function Attendance() {
         </div>
       )}
 
-      <div className="bg-white/90 backdrop-blur-xl border border-white/80 rounded-[2rem] shadow-xl shadow-slate-200/60 p-6">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">
-          <div>
-            <label className="block text-sm font-bold text-slate-700 mb-2">
-              Company
-            </label>
-            <select
-              value={selectedCompany}
-              onChange={(e) => setSelectedCompany(e.target.value)}
-              className="premium-select"
-            >
-              <option value="">Select company</option>
-              {companies.map((company) => (
-                <option key={company.id} value={company.id}>
-                  {company.name || company.companyName}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-bold text-slate-700 mb-2">
-              Attendance Date
-            </label>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="premium-input"
-            />
-          </div>
-
-          <div className="lg:col-span-2">
-            <label className="block text-sm font-bold text-slate-700 mb-2">
-              Search Employee
-            </label>
-
-            <div className="relative">
-              <Search
-                size={18}
-                className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
-              />
-              <input
-                type="text"
-                value={searchText}
-                onChange={(e) => setSearchText(e.target.value)}
-                placeholder="Search employee name"
-                className="premium-input pl-11"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-3 mt-6">
-          <button
-            onClick={fetchData}
-            disabled={loading}
-            className="premium-button-dark"
-          >
-            <RefreshCw size={18} className={loading ? "animate-spin" : ""} />
-            Refresh
-          </button>
-
-          <button
-            onClick={() => markAll("Present")}
-            disabled={companyEmployees.length === 0}
-            className="premium-button-green"
-          >
-            <CheckCircle2 size={18} />
-            Mark All Present
-          </button>
-
-          <button
-            onClick={() => markAll("Absent")}
-            disabled={companyEmployees.length === 0}
-            className="premium-button-red"
-          >
-            <XCircle size={18} />
-            Mark All Absent
-          </button>
-
-          <button
-            onClick={clearAll}
-            disabled={companyEmployees.length === 0}
-            className="inline-flex items-center justify-center gap-2 bg-slate-100 text-slate-700 px-5 py-3 rounded-2xl font-bold hover:bg-slate-200 disabled:bg-slate-100 disabled:text-slate-400 transition"
-          >
-            Clear All
-          </button>
-
-          <button
-            onClick={saveAttendance}
-            disabled={saving || companyEmployees.length === 0}
-            className="premium-button-primary ml-auto"
-          >
-            <Save size={18} />
-            {saving ? "Saving..." : "Save Attendance"}
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-4">
-        <div className="bg-white/90 rounded-3xl p-5 shadow-lg border border-white/80">
-          <p className="text-slate-500 text-sm">Total</p>
-          <h3 className="text-2xl font-black text-slate-900 mt-1">
-            {summary.total}
-          </h3>
-        </div>
-
-        <div className="bg-green-50 rounded-3xl p-5 shadow-lg border border-green-100">
-          <p className="text-green-700 text-sm font-bold">Present</p>
-          <h3 className="text-2xl font-black text-green-800 mt-1">
-            {summary.present}
-          </h3>
-        </div>
-
-        <div className="bg-red-50 rounded-3xl p-5 shadow-lg border border-red-100">
-          <p className="text-red-700 text-sm font-bold">Absent</p>
-          <h3 className="text-2xl font-black text-red-800 mt-1">
-            {summary.absent}
-          </h3>
-        </div>
-
-        <div className="bg-yellow-50 rounded-3xl p-5 shadow-lg border border-yellow-100">
-          <p className="text-yellow-700 text-sm font-bold">Half Day</p>
-          <h3 className="text-2xl font-black text-yellow-800 mt-1">
-            {summary.halfDay}
-          </h3>
-        </div>
-
-        <div className="bg-blue-50 rounded-3xl p-5 shadow-lg border border-blue-100">
-          <p className="text-blue-700 text-sm font-bold">Paid Leave</p>
-          <h3 className="text-2xl font-black text-blue-800 mt-1">
-            {summary.paidLeave}
-          </h3>
-        </div>
-
-        <div className="bg-purple-50 rounded-3xl p-5 shadow-lg border border-purple-100">
-          <p className="text-purple-700 text-sm font-bold">Holiday</p>
-          <h3 className="text-2xl font-black text-purple-800 mt-1">
-            {summary.holiday}
-          </h3>
-        </div>
-
-        <div className="bg-orange-50 rounded-3xl p-5 shadow-lg border border-orange-100">
-          <p className="text-orange-700 text-sm font-bold">Late</p>
-          <h3 className="text-2xl font-black text-orange-800 mt-1">
-            {summary.late}
-          </h3>
-        </div>
-      </div>
-
-      <div className="bg-white/90 backdrop-blur-xl border border-white/80 rounded-[2rem] shadow-xl shadow-slate-200/60 overflow-hidden">
-        <div className="p-6 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-orange-50 text-orange-700 rounded-2xl flex items-center justify-center">
-              <Users size={24} />
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+        <div className="xl:col-span-2 bg-white/90 backdrop-blur-xl border border-white/80 rounded-[2rem] shadow-xl shadow-slate-200/60 p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-12 h-12 bg-blue-50 text-blue-700 rounded-2xl flex items-center justify-center">
+              <Building2 size={25} />
             </div>
 
             <div>
               <h2 className="text-2xl font-black text-slate-900">
-                Employee Attendance
+                Firm Profile
               </h2>
-              <p className="text-slate-500 mt-1">
-                {getCompanyName(selectedCompany)} | {selectedDate}
+              <p className="text-slate-500 text-sm">
+                These details will be used in salary slips and reports.
               </p>
             </div>
           </div>
 
-          <div className="text-sm text-slate-500">
-            {summary.marked} of {summary.total} marked
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">
+                Firm / Company Name
+              </label>
+              <input
+                type="text"
+                value={settings.firmName}
+                onChange={(e) => updateField("firmName", e.target.value)}
+                placeholder="Example: AttendBook Services"
+                className="premium-input"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">
+                Owner / CA Name
+              </label>
+              <input
+                type="text"
+                value={settings.firmOwnerName}
+                onChange={(e) => updateField("firmOwnerName", e.target.value)}
+                placeholder="Example: Shahil Sharma"
+                className="premium-input"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">
+                Contact Number
+              </label>
+              <input
+                type="text"
+                value={settings.contactNumber}
+                onChange={(e) => updateField("contactNumber", e.target.value)}
+                placeholder="Example: 9876543210"
+                className="premium-input"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">
+                Email
+              </label>
+              <input
+                type="email"
+                value={settings.email}
+                onChange={(e) => updateField("email", e.target.value)}
+                placeholder="example@email.com"
+                className="premium-input"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-sm font-bold text-slate-700 mb-2">
+                Address
+              </label>
+              <textarea
+                value={settings.address}
+                onChange={(e) => updateField("address", e.target.value)}
+                placeholder="Firm address"
+                rows="4"
+                className="premium-input resize-none"
+              ></textarea>
+            </div>
           </div>
         </div>
 
-        {loading ? (
-          <div className="p-8 text-slate-500">Loading attendance...</div>
-        ) : !selectedCompany ? (
-          <div className="text-center py-16 px-6">
-            <div className="w-16 h-16 bg-slate-100 text-slate-400 rounded-3xl flex items-center justify-center mx-auto">
-              <Building2 size={34} />
+        <div className="bg-white/90 backdrop-blur-xl border border-white/80 rounded-[2rem] shadow-xl shadow-slate-200/60 p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-12 h-12 bg-purple-50 text-purple-700 rounded-2xl flex items-center justify-center">
+              <SettingsIcon size={25} />
             </div>
-            <h3 className="text-xl font-black text-slate-800 mt-5">
-              Select a company
-            </h3>
-            <p className="text-slate-500 mt-2">
-              Choose a company to load employee list.
+
+            <div>
+              <h2 className="text-2xl font-black text-slate-900">Actions</h2>
+              <p className="text-slate-500 text-sm">
+                Save or reset your app settings.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <button
+              onClick={saveSettings}
+              disabled={saving}
+              className="w-full premium-button-primary"
+            >
+              <Save size={18} />
+              {saving ? "Saving..." : "Save Settings"}
+            </button>
+
+            <button
+              onClick={resetSettings}
+              className="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 px-5 py-3 rounded-2xl font-bold transition flex items-center justify-center gap-2"
+            >
+              <RotateCcw size={18} />
+              Reset Default
+            </button>
+          </div>
+
+          <div className="mt-6 bg-slate-50 border border-slate-100 rounded-3xl p-5">
+            <p className="text-sm text-slate-500">Logged in as</p>
+            <p className="font-black text-slate-900 mt-1 break-all">
+              {currentUser?.email || "-"}
             </p>
           </div>
-        ) : companyEmployees.length === 0 ? (
-          <div className="text-center py-16 px-6">
-            <div className="w-16 h-16 bg-slate-100 text-slate-400 rounded-3xl flex items-center justify-center mx-auto">
-              <Users size={34} />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+        <div className="bg-white/90 backdrop-blur-xl border border-white/80 rounded-[2rem] shadow-xl shadow-slate-200/60 p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-12 h-12 bg-green-50 text-green-700 rounded-2xl flex items-center justify-center">
+              <Clock size={25} />
             </div>
-            <h3 className="text-xl font-black text-slate-800 mt-5">
-              No employees found
-            </h3>
-            <p className="text-slate-500 mt-2">
-              Add employees to this company first.
+
+            <div>
+              <h2 className="text-2xl font-black text-slate-900">
+                Payroll Defaults
+              </h2>
+              <p className="text-slate-500 text-sm">
+                Default values used for salary calculation.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">
+                Default Working Days
+              </label>
+              <input
+                type="number"
+                value={settings.defaultWorkingDays}
+                onChange={(e) =>
+                  updateField("defaultWorkingDays", Number(e.target.value))
+                }
+                min="1"
+                className="premium-input"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">
+                Default Standard Hours / Day
+              </label>
+              <input
+                type="number"
+                value={settings.defaultStandardHours}
+                onChange={(e) =>
+                  updateField("defaultStandardHours", Number(e.target.value))
+                }
+                min="1"
+                step="0.5"
+                className="premium-input"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">
+                Overtime Multiplier
+              </label>
+              <input
+                type="number"
+                value={settings.overtimeMultiplier}
+                onChange={(e) =>
+                  updateField("overtimeMultiplier", Number(e.target.value))
+                }
+                min="1"
+                step="0.1"
+                className="premium-input"
+              />
+            </div>
+
+            <div className="flex items-end">
+              <label className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4 w-full cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.overtimeEnabled}
+                  onChange={(e) =>
+                    updateField("overtimeEnabled", e.target.checked)
+                  }
+                  className="w-5 h-5"
+                />
+                <span className="font-bold text-slate-700">
+                  Overtime Enabled
+                </span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white/90 backdrop-blur-xl border border-white/80 rounded-[2rem] shadow-xl shadow-slate-200/60 p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-12 h-12 bg-orange-50 text-orange-700 rounded-2xl flex items-center justify-center">
+              <Timer size={25} />
+            </div>
+
+            <div>
+              <h2 className="text-2xl font-black text-slate-900">
+                Punch Processing Rules
+              </h2>
+              <p className="text-slate-500 text-sm">
+                Rules used while importing biometric punch reports.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">
+                Duplicate Punch Window
+              </label>
+              <input
+                type="number"
+                value={settings.duplicatePunchMinutes}
+                onChange={(e) =>
+                  updateField("duplicatePunchMinutes", Number(e.target.value))
+                }
+                min="0"
+                className="premium-input"
+              />
+              <p className="text-xs text-slate-500 mt-2">In minutes</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">
+                Half Day Minimum Hours
+              </label>
+              <input
+                type="number"
+                value={settings.halfDayMinimumHours}
+                onChange={(e) =>
+                  updateField("halfDayMinimumHours", Number(e.target.value))
+                }
+                min="0"
+                step="0.5"
+                className="premium-input"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">
+                Full Day Minimum Hours
+              </label>
+              <input
+                type="number"
+                value={settings.fullDayMinimumHours}
+                onChange={(e) =>
+                  updateField("fullDayMinimumHours", Number(e.target.value))
+                }
+                min="0"
+                step="0.5"
+                className="premium-input"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white/90 backdrop-blur-xl border border-white/80 rounded-[2rem] shadow-xl shadow-slate-200/60 p-6">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-12 h-12 bg-slate-100 text-slate-700 rounded-2xl flex items-center justify-center">
+            <UserRound size={25} />
+          </div>
+
+          <div>
+            <h2 className="text-2xl font-black text-slate-900">
+              Current Rules Preview
+            </h2>
+            <p className="text-slate-500 text-sm">
+              Quick view of how AttendBook will calculate attendance and salary.
             </p>
           </div>
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {companyEmployees.map((employee) => {
-              const employeeName =
-                employee.name || employee.employeeName || employee.fullName || "-"
+        </div>
 
-              const selectedStatus = attendanceMap[employee.id]
-              const selectedConfig = getStatusConfig(selectedStatus)
-
-              return (
-                <div key={employee.id} className="p-5 hover:bg-slate-50/80">
-                  <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-5">
-                    <div className="flex items-start gap-4">
-                      <div className="w-14 h-14 bg-orange-50 text-orange-700 rounded-2xl flex items-center justify-center shrink-0">
-                        <Users size={26} />
-                      </div>
-
-                      <div>
-                        <h3 className="text-lg font-black text-slate-900">
-                          {employeeName}
-                        </h3>
-
-                        <div className="flex flex-wrap gap-3 mt-2 text-sm text-slate-500">
-                          {employee.designation && (
-                            <span>{employee.designation}</span>
-                          )}
-
-                          {employee.phone && <span>{employee.phone}</span>}
-
-                          {selectedStatus && (
-                            <span
-                              className={`status-pill ${selectedConfig.bg} ${selectedConfig.color}`}
-                            >
-                              {selectedStatus}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 xl:max-w-3xl">
-                      {statusOptions.map((status) => {
-                        const Icon = status.icon
-                        const isActive = selectedStatus === status.value
-
-                        return (
-                          <button
-                            key={status.value}
-                            onClick={() =>
-                              markAttendance(employee.id, status.value)
-                            }
-                            className={`flex items-center justify-center gap-2 border px-3 py-2 rounded-2xl text-sm font-bold transition ${
-                              isActive
-                                ? status.active
-                                : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
-                            }`}
-                          >
-                            <Icon size={16} />
-                            {status.label}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
+          <PreviewCard
+            title="Working Days"
+            value={`${settings.defaultWorkingDays} days`}
+          />
+          <PreviewCard
+            title="Standard Hours"
+            value={`${settings.defaultStandardHours} hrs/day`}
+          />
+          <PreviewCard
+            title="Half Day"
+            value={`${settings.halfDayMinimumHours}+ hrs`}
+          />
+          <PreviewCard
+            title="Full Day"
+            value={`${settings.fullDayMinimumHours}+ hrs`}
+          />
+          <PreviewCard
+            title="Duplicate Punch"
+            value={`${settings.duplicatePunchMinutes} min`}
+          />
+          <PreviewCard
+            title="Overtime"
+            value={
+              settings.overtimeEnabled
+                ? `${settings.overtimeMultiplier}x enabled`
+                : "Disabled"
+            }
+          />
+          <PreviewCard
+            title="Firm"
+            value={settings.firmName || "Not set"}
+          />
+          <PreviewCard
+            title="Owner / CA"
+            value={settings.firmOwnerName || "Not set"}
+          />
+        </div>
       </div>
     </div>
   )
 }
 
-export default Attendance
+function PreviewCard({ title, value }) {
+  return (
+    <div className="bg-slate-50 border border-slate-100 rounded-3xl p-5">
+      <p className="text-slate-500 text-sm">{title}</p>
+      <h3 className="text-lg font-black text-slate-900 mt-2 break-words">
+        {value}
+      </h3>
+    </div>
+  )
+}
+
+export default Settings
